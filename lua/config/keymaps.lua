@@ -35,6 +35,11 @@ M.setup = function()
   map("x", "<C-x>", helper.cut_selection, "Cut Selection")
   map("x", "<C-v>", helper.replace_selection_with_clipboard, "Paste")
 
+  map("s", "<BS>", helper.delete_selection_select, "Delete Selection")
+  map("s", "<C-h>", helper.delete_selection_select, "Delete Selection")
+  map("s", "<Del>", helper.delete_selection_select, "Delete Selection")
+  map("s", "<C-c>", "<C-g>", "Leave Select Mode")
+
   map("n", "<C-c>", helper.copy_line, "Copy Line")
   map("i", "<C-c>", helper.copy_line, "Copy Line")
   map("n", "<C-x>", helper.cut_line, "Cut Line")

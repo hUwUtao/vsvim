@@ -43,8 +43,8 @@ M.setup = function()
   opt.updatetime = 200
   opt.wrap = false
 
-  opt.keymodel = {}
-  opt.selectmode = {}
+  opt.keymodel = { "startsel", "stopsel" }
+  opt.selectmode = { "mouse", "key" }
   opt.mousemodel = "extend"
   opt.whichwrap:append("<>[]hl")
 

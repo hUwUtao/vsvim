@@ -23,6 +23,23 @@ end
 
 local startinsert_if_needed
 
+local function current_selection_type()
+  local mode = vim.fn.mode()
+  if mode == "s" or mode == "x" then
+    return vim.fn.visualmode()
+  end
+  if mode == "S" then
+    return "V"
+  end
+  if mode == "\19" then
+    return vim.api.nvim_replace_termcodes("<C-v>", true, false, true)
+  end
+  if mode == "v" or mode == "V" then
+    return mode
+  end
+  return "v"
+end
+
 local function suspend_insert_guard()
   vim.g.vsvim_suspend_insert_guard = true
 end
@@ -33,9 +50,44 @@ end
 
 local function get_active_selection_text()
   local chunks = vim.fn.getregion(vim.fn.getpos("v"), vim.fn.getpos("."), {
-    type = vim.fn.mode(),
+    type = current_selection_type(),
   })
   return table.concat(chunks, "\n")
+end
+
+local function get_active_selection_bounds()
+  local regtype = current_selection_type()
+  local region = vim.fn.getregionpos(vim.fn.getpos("v"), vim.fn.getpos("."), {
+    type = regtype,
+    exclusive = false,
+    eol = true,
+  })
+
+  if regtype == "v" or regtype == "V" then
+    region = { { assert(region[1])[1], assert(region[#region])[2] } }
+  end
+
+  local first = assert(region[1])[1]
+  local last = assert(region[#region])[2]
+
+  local start_row = first[2] - 1
+  local start_col = math.max(first[3] - 1, 0)
+  local end_row = last[2] - 1
+  local end_col = last[3]
+
+  if regtype == "V" then
+    start_col = 0
+    end_row = end_row + 1
+    end_col = 0
+  end
+
+  return start_row, start_col, end_row, end_col
+end
+
+local function delete_active_selection()
+  local start_row, start_col, end_row, end_col = get_active_selection_bounds()
+  vim.api.nvim_buf_set_text(0, start_row, start_col, end_row, end_col, { "" })
+  vim.api.nvim_win_set_cursor(0, { start_row + 1, start_col })
 end
 
 local function escape_pattern(text)
@@ -194,13 +246,20 @@ function M.insert_paste()
 end
 
 function M.replace_selection_with_clipboard()
-  vim.fn.setreg('"', vim.fn.getreg("+"))
-  vim.cmd([[normal! "_dP]])
+  local start_row, start_col, end_row, end_col = get_active_selection_bounds()
+  local text = vim.split(vim.fn.getreg("+"), "\n", { plain = true })
+  vim.api.nvim_buf_set_text(0, start_row, start_col, end_row, end_col, text)
+  vim.api.nvim_win_set_cursor(0, { start_row + 1, start_col })
   startinsert_if_needed()
 end
 
 function M.delete_selection()
-  vim.cmd([[normal! "_d]])
+  delete_active_selection()
+  startinsert_if_needed()
+end
+
+function M.delete_selection_select()
+  delete_active_selection()
   startinsert_if_needed()
 end
 
@@ -213,7 +272,7 @@ end
 function M.cut_selection()
   local text = get_active_selection_text()
   vim.fn.setreg("+", text)
-  vim.cmd([[normal! "_d]])
+  delete_active_selection()
   startinsert_if_needed()
 end
 
