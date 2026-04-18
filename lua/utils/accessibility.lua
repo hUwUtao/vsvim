@@ -101,6 +101,135 @@ local function get_active_selection_segments()
   return segments
 end
 
+local function get_selected_line_range()
+  local start_row = vim.fn.getpos("v")[2] - 1
+  local end_row = vim.fn.getpos(".")[2] - 1
+
+  if start_row > end_row then
+    start_row, end_row = end_row, start_row
+  end
+
+  return start_row, end_row
+end
+
+local function position_before(a, b)
+  if a[2] ~= b[2] then
+    return a[2] < b[2]
+  end
+  return a[3] <= b[3]
+end
+
+local function get_line_tabbing_rows()
+  local regtype = current_selection_type()
+
+  if regtype == "V" then
+    local start_row, end_row = get_selected_line_range()
+    local rows = {}
+    for row = start_row, end_row do
+      rows[row] = true
+    end
+    return rows
+  end
+
+  if regtype == "\22" then
+    local rows = {}
+    for _, segment in ipairs(get_active_selection_segments()) do
+      if segment.start_col == 0 then
+        rows[segment.start_row] = true
+      end
+    end
+    return rows
+  end
+
+  local segments = get_active_selection_segments()
+  local first = segments[1]
+  if not first then
+    return {}
+  end
+
+  local rows = {}
+  if first.start_row == first.end_row then
+    if first.start_col == 0 then
+      rows[first.start_row] = true
+    end
+    return rows
+  end
+
+  if first.start_col == 0 then
+    rows[first.start_row] = true
+  end
+
+  for row = first.start_row + 1, first.end_row do
+    rows[row] = true
+  end
+
+  return rows
+end
+
+local function selection_uses_line_tabbing()
+  return next(get_line_tabbing_rows()) ~= nil
+end
+
+local function indent_width()
+  local width = vim.bo.shiftwidth
+  if width == 0 then
+    width = vim.bo.tabstop
+  end
+  return math.max(width, 1)
+end
+
+local function line_indent_prefix(line)
+  local prefix = line:match("^[ \t]*") or ""
+  local visual = vim.fn.strdisplaywidth(prefix)
+  return prefix, visual
+end
+
+local function add_indent_to_lines(start_row, end_row, included_rows)
+  local lines = vim.api.nvim_buf_get_lines(0, start_row, end_row + 1, false)
+  local prefix = vim.bo.expandtab and string.rep(" ", indent_width()) or "\t"
+  local changed = {}
+
+  for i, line in ipairs(lines) do
+    local row = start_row + i - 1
+    if included_rows[row] then
+      lines[i] = prefix .. line
+      changed[row] = #prefix
+    end
+  end
+
+  vim.api.nvim_buf_set_lines(0, start_row, end_row + 1, false, lines)
+  return changed
+end
+
+local function remove_indent_from_lines(start_row, end_row, included_rows)
+  local lines = vim.api.nvim_buf_get_lines(0, start_row, end_row + 1, false)
+  local width = indent_width()
+  local changed = {}
+
+  for i, line in ipairs(lines) do
+    local row = start_row + i - 1
+    if included_rows[row] then
+      local prefix, visual = line_indent_prefix(line)
+      if prefix ~= "" then
+        local trim = 0
+        local target = math.min(width, visual)
+
+        while trim < #prefix and vim.fn.strdisplaywidth(prefix:sub(1, trim)) < target do
+          trim = trim + 1
+        end
+
+        if trim > 0 then
+          lines[i] = line:sub(trim + 1)
+          changed[row] = -trim
+        end
+      end
+    end
+  end
+
+  vim.api.nvim_buf_set_lines(0, start_row, end_row + 1, false, lines)
+  return changed
+end
+
 local function set_cursor_after_selection(segments)
   local first = segments[1]
   if not first then
@@ -126,6 +255,53 @@ local function finish_selection_action()
   clear_active_selection()
   vim.schedule(function()
     startinsert_if_needed()
+  end)
+end
+
+local function switch_select_to_visual(callback)
+  local ctrl_g = vim.api.nvim_replace_termcodes("<C-g>", true, false, true)
+  vim.api.nvim_feedkeys(ctrl_g, "n", false)
+  vim.schedule(callback)
+end
+
+local function adjust_selection_pos(pos, changed)
+  local delta = changed[pos[2] - 1]
+  if not delta or delta == 0 then
+    return vim.deepcopy(pos)
+  end
+
+  local updated = vim.deepcopy(pos)
+  updated[3] = math.max(updated[3] + delta, 1)
+  return updated
+end
+
+local function expand_range_to_line_start(anchor, cursor, included_rows)
+  local start_pos = vim.deepcopy(anchor)
+  local end_pos = vim.deepcopy(cursor)
+  if not position_before(start_pos, end_pos) then
+    start_pos, end_pos = end_pos, start_pos
+  end
+
+  local first_row = start_pos[2] - 1
+  if included_rows[first_row] then
+    start_pos[3] = 1
+  end
+
+  return start_pos, end_pos
+end
+
+local function reselect_preserved_range(anchor, cursor)
+  local start_pos = anchor
+  local end_pos = cursor
+  if not position_before(start_pos, end_pos) then
+    start_pos, end_pos = end_pos, start_pos
+  end
+
+  vim.fn.setpos("'<", start_pos)
+  vim.fn.setpos("'>", end_pos)
+
+  vim.schedule(function()
+    pcall(vim.cmd, "normal! gv")
   end)
 end
 
@@ -386,6 +562,59 @@ function M.cut_line()
   vim.fn.setreg("+", line)
   delete_current_line()
   startinsert_if_needed()
+end
+
+function M.indent_selection()
+  local anchor = vim.fn.getpos("v")
+  local cursor = vim.fn.getpos(".")
+  local start_row, end_row = get_selected_line_range()
+  local included_rows = get_line_tabbing_rows()
+
+  if next(included_rows) ~= nil then
+    local changed = add_indent_to_lines(start_row, end_row, included_rows)
+    local next_anchor, next_cursor = expand_range_to_line_start(
+      adjust_selection_pos(anchor, changed),
+      adjust_selection_pos(cursor, changed),
+      included_rows
+    )
+    reselect_preserved_range(next_anchor, next_cursor)
+  else
+    local text = string.rep(" ", indent_width())
+    local segments = get_active_selection_segments()
+    local first = segments[1]
+    if first then
+      vim.api.nvim_buf_set_text(0, first.start_row, first.start_col, first.end_row, first.end_col, { text })
+    end
+    reselect_preserved_range(anchor, cursor)
+  end
+end
+
+function M.outdent_selection()
+  local anchor = vim.fn.getpos("v")
+  local cursor = vim.fn.getpos(".")
+  local start_row, end_row = get_selected_line_range()
+  local included_rows = get_line_tabbing_rows()
+
+  if next(included_rows) ~= nil then
+    local changed = remove_indent_from_lines(start_row, end_row, included_rows)
+    local next_anchor, next_cursor = expand_range_to_line_start(
+      adjust_selection_pos(anchor, changed),
+      adjust_selection_pos(cursor, changed),
+      included_rows
+    )
+    reselect_preserved_range(next_anchor, next_cursor)
+    return
+  end
+
+  reselect_preserved_range(anchor, cursor)
+end
+
+function M.indent_selection_select()
+  switch_select_to_visual(M.indent_selection)
+end
+
+function M.outdent_selection_select()
+  switch_select_to_visual(M.outdent_selection)
 end
 
 return M

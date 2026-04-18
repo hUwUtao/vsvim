@@ -21,6 +21,7 @@ M.setup = function()
   opt.expandtab = true
   opt.ignorecase = true
   opt.inccommand = "split"
+  opt.laststatus = 3
   opt.linebreak = true
   opt.mouse = "a"
   opt.number = true
