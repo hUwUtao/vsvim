@@ -25,17 +25,14 @@ local startinsert_if_needed
 
 local function current_selection_type()
   local mode = vim.fn.mode()
-  if mode == "s" or mode == "x" then
-    return vim.fn.visualmode()
+  if mode == "v" or mode == "s" or mode == "x" then
+    return "v"
   end
-  if mode == "S" then
+  if mode == "V" or mode == "S" then
     return "V"
   end
-  if mode == "\19" then
-    return vim.api.nvim_replace_termcodes("<C-v>", true, false, true)
-  end
-  if mode == "v" or mode == "V" then
-    return mode
+  if mode == "\22" or mode == "\19" then
+    return "\22"
   end
   return "v"
 end
@@ -84,10 +81,77 @@ local function get_active_selection_bounds()
   return start_row, start_col, end_row, end_col
 end
 
+local function get_active_selection_segments()
+  local regtype = current_selection_type()
+  local region = vim.fn.getregionpos(vim.fn.getpos("v"), vim.fn.getpos("."), {
+    type = regtype,
+    exclusive = false,
+    eol = true,
+  })
+
+  local segments = {}
+  for _, pair in ipairs(region) do
+    local first = assert(pair[1])
+    local last = assert(pair[2])
+    segments[#segments + 1] = {
+      start_row = first[2] - 1,
+      start_col = math.max(first[3] - 1, 0),
+      end_row = last[2] - 1,
+      end_col = last[3],
+    }
+  end
+
+  if regtype == "V" and #segments > 0 then
+    local first = segments[1]
+    local last = segments[#segments]
+    return {
+      {
+        start_row = first.start_row,
+        start_col = 0,
+        end_row = last.end_row + 1,
+        end_col = 0,
+      },
+    }
+  end
+
+  if regtype == "v" and #segments > 1 then
+    local first = segments[1]
+    local last = segments[#segments]
+    return {
+      {
+        start_row = first.start_row,
+        start_col = first.start_col,
+        end_row = last.end_row,
+        end_col = last.end_col,
+      },
+    }
+  end
+
+  return segments
+end
+
+local function set_cursor_after_selection(segments)
+  local first = segments[1]
+  if not first then
+    return
+  end
+  vim.api.nvim_win_set_cursor(0, { first.start_row + 1, first.start_col })
+end
+
 local function delete_active_selection()
-  local start_row, start_col, end_row, end_col = get_active_selection_bounds()
-  vim.api.nvim_buf_set_text(0, start_row, start_col, end_row, end_col, { "" })
-  vim.api.nvim_win_set_cursor(0, { start_row + 1, start_col })
+  local segments = get_active_selection_segments()
+  for i = #segments, 1, -1 do
+    local segment = segments[i]
+    vim.api.nvim_buf_set_text(
+      0,
+      segment.start_row,
+      segment.start_col,
+      segment.end_row,
+      segment.end_col,
+      { "" }
+    )
+  end
+  set_cursor_after_selection(segments)
 end
 
 local function escape_pattern(text)
@@ -246,10 +310,26 @@ function M.insert_paste()
 end
 
 function M.replace_selection_with_clipboard()
-  local start_row, start_col, end_row, end_col = get_active_selection_bounds()
+  local segments = get_active_selection_segments()
   local text = vim.split(vim.fn.getreg("+"), "\n", { plain = true })
-  vim.api.nvim_buf_set_text(0, start_row, start_col, end_row, end_col, text)
-  vim.api.nvim_win_set_cursor(0, { start_row + 1, start_col })
+
+  for i = #segments, 1, -1 do
+    local segment = segments[i]
+    local replacement = text
+    if #segments > 1 then
+      replacement = { text[math.min(i, #text)] or text[1] or "" }
+    end
+    vim.api.nvim_buf_set_text(
+      0,
+      segment.start_row,
+      segment.start_col,
+      segment.end_row,
+      segment.end_col,
+      replacement
+    )
+  end
+
+  set_cursor_after_selection(segments)
   startinsert_if_needed()
 end
 
@@ -269,7 +349,20 @@ function M.copy_selection()
   startinsert_if_needed()
 end
 
+function M.copy_selection_select()
+  local text = get_active_selection_text()
+  vim.fn.setreg("+", text)
+  startinsert_if_needed()
+end
+
 function M.cut_selection()
+  local text = get_active_selection_text()
+  vim.fn.setreg("+", text)
+  delete_active_selection()
+  startinsert_if_needed()
+end
+
+function M.cut_selection_select()
   local text = get_active_selection_text()
   vim.fn.setreg("+", text)
   delete_active_selection()
