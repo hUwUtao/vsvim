@@ -6,7 +6,6 @@ local disabled_filetypes = {
   ["help"] = true,
   ["lazy"] = true,
   ["mason"] = true,
-  ["noice"] = true,
   ["qf"] = true,
   ["snacks_dashboard"] = true,
   ["snacks_input"] = true,

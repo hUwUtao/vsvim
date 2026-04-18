@@ -6,10 +6,6 @@ local function map(modes, lhs, rhs, desc)
   vim.keymap.set(modes, lhs, rhs, { desc = desc, silent = true })
 end
 
-local function expr_map(modes, lhs, rhs, desc)
-  vim.keymap.set(modes, lhs, rhs, { desc = desc, expr = true, silent = true })
-end
-
 M.setup = function()
   map({ "n", "i", "v", "s" }, "<C-s>", helper.save, "Save")
   map({ "n", "i", "v", "s" }, "<C-q>", helper.quit, "Quit")

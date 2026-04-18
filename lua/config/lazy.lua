@@ -1,8 +1,14 @@
 local M = {}
 
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+local bundled_lazy = vim.fn.stdpath("config") .. "/vendor/lazy.nvim"
 
 local function bootstrap()
+  if vim.uv.fs_stat(bundled_lazy) then
+    lazypath = bundled_lazy
+    return
+  end
+
   if vim.uv.fs_stat(lazypath) then
     return
   end
@@ -34,9 +40,6 @@ M.setup = function()
       lazy = true,
       version = false,
     },
-    install = {
-      colorscheme = { "tokyonight" },
-    },
     checker = {
       enabled = false,
     },
@@ -51,6 +54,10 @@ M.setup = function()
       rtp = {
         reset = false,
       },
+    },
+    dev = {
+      path = vim.fn.stdpath("config") .. "/vendor",
+      fallback = true,
     },
   })
 

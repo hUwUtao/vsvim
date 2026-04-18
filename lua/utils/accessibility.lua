@@ -52,35 +52,6 @@ local function get_active_selection_text()
   return table.concat(chunks, "\n")
 end
 
-local function get_active_selection_bounds()
-  local regtype = current_selection_type()
-  local region = vim.fn.getregionpos(vim.fn.getpos("v"), vim.fn.getpos("."), {
-    type = regtype,
-    exclusive = false,
-    eol = true,
-  })
-
-  if regtype == "v" or regtype == "V" then
-    region = { { assert(region[1])[1], assert(region[#region])[2] } }
-  end
-
-  local first = assert(region[1])[1]
-  local last = assert(region[#region])[2]
-
-  local start_row = first[2] - 1
-  local start_col = math.max(first[3] - 1, 0)
-  local end_row = last[2] - 1
-  local end_col = last[3]
-
-  if regtype == "V" then
-    start_col = 0
-    end_row = end_row + 1
-    end_col = 0
-  end
-
-  return start_row, start_col, end_row, end_col
-end
-
 local function get_active_selection_segments()
   local regtype = current_selection_type()
   local region = vim.fn.getregionpos(vim.fn.getpos("v"), vim.fn.getpos("."), {
@@ -138,6 +109,26 @@ local function set_cursor_after_selection(segments)
   vim.api.nvim_win_set_cursor(0, { first.start_row + 1, first.start_col })
 end
 
+local function clear_active_selection()
+  local mode = vim.fn.mode()
+  if mode == "v" or mode == "V" or mode == "\22" then
+    local esc = vim.api.nvim_replace_termcodes("<Esc>", true, false, true)
+    vim.api.nvim_input(esc)
+    return
+  end
+  if mode == "s" or mode == "S" or mode == "\19" then
+    local leave_select = vim.api.nvim_replace_termcodes("<C-g><Esc>", true, false, true)
+    vim.api.nvim_input(leave_select)
+  end
+end
+
+local function finish_selection_action()
+  clear_active_selection()
+  vim.schedule(function()
+    startinsert_if_needed()
+  end)
+end
+
 local function delete_active_selection()
   local segments = get_active_selection_segments()
   for i = #segments, 1, -1 do
@@ -152,6 +143,21 @@ local function delete_active_selection()
     )
   end
   set_cursor_after_selection(segments)
+end
+
+local function delete_current_line()
+  local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+  vim.api.nvim_buf_set_lines(0, row, row + 1, false, {})
+  local line_count = vim.api.nvim_buf_line_count(0)
+
+  if line_count == 0 then
+    vim.api.nvim_buf_set_lines(0, 0, 0, false, { "" })
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    return
+  end
+
+  local target = math.min(row + 1, line_count)
+  vim.api.nvim_win_set_cursor(0, { target, 0 })
 end
 
 local function escape_pattern(text)
@@ -330,43 +336,43 @@ function M.replace_selection_with_clipboard()
   end
 
   set_cursor_after_selection(segments)
-  startinsert_if_needed()
+  finish_selection_action()
 end
 
 function M.delete_selection()
   delete_active_selection()
-  startinsert_if_needed()
+  finish_selection_action()
 end
 
 function M.delete_selection_select()
   delete_active_selection()
-  startinsert_if_needed()
+  finish_selection_action()
 end
 
 function M.copy_selection()
   local text = get_active_selection_text()
   vim.fn.setreg("+", text)
-  startinsert_if_needed()
+  finish_selection_action()
 end
 
 function M.copy_selection_select()
   local text = get_active_selection_text()
   vim.fn.setreg("+", text)
-  startinsert_if_needed()
+  finish_selection_action()
 end
 
 function M.cut_selection()
   local text = get_active_selection_text()
   vim.fn.setreg("+", text)
   delete_active_selection()
-  startinsert_if_needed()
+  finish_selection_action()
 end
 
 function M.cut_selection_select()
   local text = get_active_selection_text()
   vim.fn.setreg("+", text)
   delete_active_selection()
-  startinsert_if_needed()
+  finish_selection_action()
 end
 
 function M.copy_line()
@@ -378,7 +384,7 @@ end
 function M.cut_line()
   local line = vim.api.nvim_get_current_line()
   vim.fn.setreg("+", line)
-  vim.cmd("normal! dd")
+  delete_current_line()
   startinsert_if_needed()
 end
 

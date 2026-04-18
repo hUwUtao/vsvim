@@ -1,6 +1,8 @@
+local plugin = require("utils.plugin_source")
+
 return {
   {
-    "stevearc/conform.nvim",
+    plugin.source("stevearc/conform.nvim"),
     event = { "BufWritePre" },
     opts = {
       notify_on_error = false,
@@ -16,7 +18,7 @@ return {
     },
   },
   {
-    "williamboman/mason.nvim",
+    plugin.source("williamboman/mason.nvim"),
     event = "VeryLazy",
     cmd = { "Mason", "MasonInstall", "MasonUpdate", "MasonUninstall", "MasonLog" },
     opts = {
@@ -24,7 +26,7 @@ return {
     },
   },
   {
-    "WhoIsSethDaniel/mason-tool-installer.nvim",
+    plugin.source("WhoIsSethDaniel/mason-tool-installer.nvim"),
     event = "VeryLazy",
     cmd = {
       "MasonToolsInstall",
@@ -34,7 +36,7 @@ return {
       "MasonToolsClean",
     },
     dependencies = {
-      "williamboman/mason.nvim",
+      plugin.source("williamboman/mason.nvim"),
     },
     opts = {
       ensure_installed = {
@@ -47,52 +49,30 @@ return {
     },
   },
   {
-    "williamboman/mason-lspconfig.nvim",
-    event = "VeryLazy",
-    dependencies = {
-      "WhoIsSethDaniel/mason-tool-installer.nvim",
-      "williamboman/mason.nvim",
-      "neovim/nvim-lspconfig",
-    },
-    opts = {
-      ensure_installed = { "lua_ls" },
-      automatic_enable = true,
-    },
-  },
-  {
-    "hrsh7th/nvim-cmp",
+    plugin.source("hrsh7th/nvim-cmp"),
     event = "InsertEnter",
     dependencies = {
-      "L3MON4D3/LuaSnip",
-      "hrsh7th/cmp-buffer",
-      "hrsh7th/cmp-nvim-lsp",
-      "hrsh7th/cmp-path",
-      "saadparwaiz1/cmp_luasnip",
-      "rafamadriz/friendly-snippets",
+      plugin.source("hrsh7th/cmp-buffer"),
+      plugin.source("hrsh7th/cmp-nvim-lsp"),
+      plugin.source("hrsh7th/cmp-path"),
     },
     config = function()
       local cmp = require("cmp")
-      local luasnip = require("luasnip")
-
-      require("luasnip.loaders.from_vscode").lazy_load()
 
       cmp.setup({
         completion = {
           completeopt = "menu,menuone,noselect",
-        },
-        snippet = {
-          expand = function(args)
-            luasnip.lsp_expand(args.body)
-          end,
         },
         mapping = cmp.mapping.preset.insert({
           ["<C-Space>"] = cmp.mapping.complete(),
           ["<CR>"] = cmp.mapping.confirm({ select = true }),
           ["<Tab>"] = cmp.mapping(function(fallback)
             if cmp.visible() then
-              cmp.select_next_item()
-            elseif luasnip.expand_or_locally_jumpable() then
-              luasnip.expand_or_jump()
+              if cmp.get_selected_entry() then
+                cmp.confirm({ select = false })
+              else
+                cmp.select_next_item()
+              end
             else
               fallback()
             end
@@ -100,8 +80,6 @@ return {
           ["<S-Tab>"] = cmp.mapping(function(fallback)
             if cmp.visible() then
               cmp.select_prev_item()
-            elseif luasnip.locally_jumpable(-1) then
-              luasnip.jump(-1)
             else
               fallback()
             end
@@ -109,7 +87,6 @@ return {
         }),
         sources = cmp.config.sources({
           { name = "nvim_lsp" },
-          { name = "luasnip" },
           { name = "path" },
         }, {
           { name = "buffer" },
@@ -118,13 +95,12 @@ return {
     end,
   },
   {
-    "neovim/nvim-lspconfig",
+    plugin.source("neovim/nvim-lspconfig"),
     event = { "BufReadPre", "BufNewFile" },
     dependencies = {
-      "WhoIsSethDaniel/mason-tool-installer.nvim",
-      "williamboman/mason-lspconfig.nvim",
-      "williamboman/mason.nvim",
-      "hrsh7th/cmp-nvim-lsp",
+      plugin.source("WhoIsSethDaniel/mason-tool-installer.nvim"),
+      plugin.source("williamboman/mason.nvim"),
+      plugin.source("hrsh7th/cmp-nvim-lsp"),
     },
     config = function()
       local capabilities = require("cmp_nvim_lsp").default_capabilities()

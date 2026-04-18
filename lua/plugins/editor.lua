@@ -1,6 +1,8 @@
+local plugin = require("utils.plugin_source")
+
 return {
   {
-    "nvim-treesitter/nvim-treesitter",
+    plugin.source("nvim-treesitter/nvim-treesitter"),
     event = { "BufReadPost", "BufNewFile" },
     cmd = {
       "TSInstall",
